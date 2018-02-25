@@ -1,7 +1,7 @@
 package natstransport
 
 import (
-	libsvc "bitbucket.org/jnjteam/platform-kit/svc"
+	libsvc "bitbucket.org/jayven/platform-kit/svc"
 	"bytes"
 	"context"
 	"errors"

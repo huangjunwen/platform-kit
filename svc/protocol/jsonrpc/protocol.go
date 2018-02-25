@@ -1,7 +1,7 @@
 package jsonrpc
 
 import (
-	libsvc "bitbucket.org/jnjteam/platform-kit/svc"
+	libsvc "bitbucket.org/jayven/platform-kit/svc"
 	"encoding/json"
 	"errors"
 	"github.com/mailru/easyjson"

@@ -9,7 +9,7 @@ type inprocServer struct{}
 
 type inprocClient struct{}
 
-type inprocRemoteService struct {
+type inprocClientService struct {
 	name string
 }
 
@@ -30,7 +30,7 @@ var (
 var (
 	_ ServiceServer = defaultInprocServer
 	_ ServiceClient = defaultInprocClient
-	_ Service       = (*inprocRemoteService)(nil)
+	_ Service       = (*inprocClientService)(nil)
 )
 
 // InprocServer 创建一个进程内服务端，在此服务端注册的服务只能被同进程内的客户端访问到
@@ -65,23 +65,23 @@ func (client inprocClient) Make(svcName string) Service {
 	if !IsValidServiceName(svcName) {
 		panic(ErrBadSvcName)
 	}
-	return &inprocRemoteService{
+	return &inprocClientService{
 		name: svcName,
 	}
 }
 
-func (svc *inprocRemoteService) Name() string {
+func (svc *inprocClientService) Name() string {
 	return svc.name
 }
 
-func (svc *inprocRemoteService) Invoke(ctx context.Context, method Method, input interface{}) (interface{}, error) {
+func (svc *inprocClientService) Invoke(ctx context.Context, method Method, input, output interface{}) error {
 	inproc.mu.RLock()
 	s := inproc.svcs[svc.name]
 	inproc.mu.RUnlock()
 
 	if s == nil {
-		return nil, ErrSvcNotFound
+		return ErrSvcNotFound
 	}
-	return s.Invoke(ctx, method, input)
+	return s.Invoke(ctx, method, input, output)
 
 }

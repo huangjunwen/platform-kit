@@ -10,8 +10,9 @@ type Service interface {
 	// Name 返回服务名称
 	Name() string
 
-	// Invoke 调用服务的一个方法，input/output 必须满足 method 定义的类型，否则应当 panic
-	Invoke(ctx context.Context, method Method, input interface{}) (output interface{}, err error)
+	// Invoke 调用服务的一个方法，input/output 必须满足 method 定义的类型，否则 Invoke 应当 panic；
+	// NOTE: 仅当 error 为 nil 时，output 有效
+	Invoke(ctx context.Context, method Method, input, output interface{}) error
 }
 
 // ServiceWithInterface 代表一个绑定了接口定义的服务
@@ -110,7 +111,7 @@ func NewLocalService(svcName string, methodAndHandlers ...interface{}) ServiceWi
 		}
 		// 检查 handler
 		switch h := methodAndHandlers[i+1].(type) {
-		case func(context.Context, interface{}) (interface{}, error):
+		case func(context.Context, interface{}, interface{}) error:
 			handler = MethodHandlerFunc(h)
 		case MethodHandler:
 			handler = h
@@ -128,20 +129,20 @@ func (svc *localService) Name() string {
 	return svc.name
 }
 
-func (svc *localService) Invoke(ctx context.Context, method Method, input interface{}) (interface{}, error) {
+func (svc *localService) Invoke(ctx context.Context, method Method, input, output interface{}) error {
+	// 查找方法
 	handler := svc.handlers[method]
 	if handler == nil {
-		return nil, ErrMethodNotFound
+		return ErrMethodNotFound
 	}
+
 	// 对出入参进行类型检查
 	method.AssertInputType(input)
-	// 建立一个“崭新”的 context
-	output, err := handler.Invoke(newProxyContext(ctx), input)
-	if err != nil {
-		return nil, err
-	}
 	method.AssertOutputType(output)
-	return output, nil
+
+	// 建立一个“崭新”的 context 来执行 handler
+	return handler.Invoke(newProxyContext(ctx), input, output)
+
 }
 
 func (svc *localService) Interface() Interface {

@@ -47,11 +47,11 @@ type Interface interface {
 // MethodHandler 是一个方法层面的处理器，它的入参和出参是无类型的（interface{}），
 // 所以需要 Method 提供类型检查
 type MethodHandler interface {
-	Invoke(ctx context.Context, input interface{}) (output interface{}, err error)
+	Invoke(ctx context.Context, input, output interface{}) error
 }
 
 // MethodHandlerFunc 适配 MethodHandler
-type MethodHandlerFunc func(context.Context, interface{}) (interface{}, error)
+type MethodHandlerFunc func(context.Context, interface{}, interface{}) error
 
 type defaultMethod struct {
 	name       string
@@ -79,7 +79,7 @@ var (
 //   input.IsValid() == true && input.Type().Kind() == reflect.Ptr && !input.IsNil()
 //
 // 需为真
-func NewMethod(methodName string, inFactory func() interface{}, outFactory func() interface{}) Method {
+func NewMethod(methodName string, inFactory, outFactory func() interface{}) Method {
 	// 检查方法名
 	if !IsValidMethodName(methodName) {
 		panic(ErrBadMethodName)
@@ -205,8 +205,8 @@ func (i defaultInterface) Methods() []Method {
 }
 
 // Invoke 实现 MethodHandler 接口
-func (fn MethodHandlerFunc) Invoke(ctx context.Context, input interface{}) (interface{}, error) {
-	return fn(ctx, input)
+func (fn MethodHandlerFunc) Invoke(ctx context.Context, input, output interface{}) error {
+	return fn(ctx, input, output)
 }
 
 var (

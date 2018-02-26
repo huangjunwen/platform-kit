@@ -33,22 +33,22 @@ func TestLocalService(t *testing.T) {
 		svc := NewLocalService(
 			"bad.output.type",
 			noopMethod,
-			func(_ context.Context, input interface{}) (interface{}, error) {
-				return 100, nil
+			func(_ context.Context, input, output interface{}) error {
+				return nil
 			},
 		)
-		svc.Invoke(context.Background(), noopMethod, &struct{}{})
+		svc.Invoke(context.Background(), noopMethod, &struct{}{}, 100)
 	}, "Expect panic since handler's output does not match method's")
 
 	a.Panics(func() {
 		svc := NewLocalService(
 			"bad.input.type",
 			noopMethod,
-			func(_ context.Context, input interface{}) (interface{}, error) {
-				return &struct{}{}, nil
+			func(_ context.Context, input, output interface{}) error {
+				return nil
 			},
 		)
-		svc.Invoke(context.Background(), noopMethod, 100)
+		svc.Invoke(context.Background(), noopMethod, 100, &struct{}{})
 	}, "Expect panic since input does not match method's")
 
 }

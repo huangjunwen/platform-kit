@@ -55,8 +55,11 @@ func (server *rpcServer) Register(svc ServiceWithInterface) error {
 				return protocol.ProcessMethodNotFound(respWriter, methodName)
 			}
 
-			// 入参
+			// 生成出入参
 			input := method.GenInput()
+			output := method.GenOutput()
+
+			// 处理入参
 			done, err = protocol.ProcessInput(respWriter, input)
 			if err != nil || done {
 				return err
@@ -66,11 +69,11 @@ func (server *rpcServer) Register(svc ServiceWithInterface) error {
 			if len(passthru) != 0 {
 				ctx = WithPassthru(ctx, passthru)
 			}
-			output, outputErr := svc.Invoke(ctx, method, input)
-			// NOTE: svc.Invoke 应该已经检查 output 的类型，所以这里不用再检查了
+			outputErr := svc.Invoke(ctx, method, input, output)
 
-			// 出参
+			// 处理出参
 			return protocol.ProcessOutput(respWriter, output, outputErr)
+
 		}),
 	)
 
@@ -102,9 +105,10 @@ func (svc *rpcClientService) Name() string {
 	return svc.name
 }
 
-func (svc *rpcClientService) Invoke(ctx context.Context, method Method, input interface{}) (interface{}, error) {
-	// 首先检查一下 input type
+func (svc *rpcClientService) Invoke(ctx context.Context, method Method, input, output interface{}) error {
+	// 首先检查一下 input/output type
 	method.AssertInputType(input)
+	method.AssertOutputType(output)
 
 	client := svc.client
 	protocol := client.protocol.Protocol()
@@ -112,7 +116,7 @@ func (svc *rpcClientService) Invoke(ctx context.Context, method Method, input in
 	// 发现服务
 	requestor, err := client.transport.Discover(ctx, svc.name)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// 远程调用
@@ -121,15 +125,10 @@ func (svc *rpcClientService) Invoke(ctx context.Context, method Method, input in
 		return protocol.ProcessInput(reqWriter, method.Name(), input, Passthru(ctx))
 	})
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// RPC 响应 -> 出参
-	output := method.GenOutput()
-	err = protocol.ProcessOutput(respReader, output)
-	if err != nil {
-		return nil, err
-	}
+	return protocol.ProcessOutput(respReader, output)
 
-	return output, nil
 }

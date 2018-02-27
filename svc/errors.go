@@ -15,7 +15,7 @@ var (
 	ErrOutputTypeNotPtr  = errors.New("Output is not ptr")
 	ErrOutputNilPtr      = errors.New("Output is nil ptr")
 	ErrBadSvcName        = errors.New("Bad service name")
-	ErrAltIsInprocClient = errors.New("alt client should not be the inproc client")
+	ErrAltIsInprocClient = errors.New("Alt client should not be the inproc client")
 	ErrMethodNotFound    = errors.New("Method not found or not implemented")
 	ErrSvcNotFound       = errors.New("Service not found")
 	ErrSvcNameConflict   = errors.New("Service name conflict (duplicated)")

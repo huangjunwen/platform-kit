@@ -4,8 +4,8 @@ Package libsvc 提供一个服务框架，主要类型跟函数之间的关系�
 	                                                                        +-- InprocClient()
 	                      Make()                                            |
 	     +------------------------------------------------ ServiceClient <--+-- NewRPCClient(RPCClientProtocolFactory, RPCTransportClient)
-	     |                                                     * ^
-	     v      BindInterface()                                * *
+	     |                                                     * ^          |
+	     v      BindInterface()                                * *          +-- NewInprocFirstClient(ServiceClient)
 	  Service -------------------> ServiceWithInterface  (req) * * (resp)
 	                                     ^  |                  * *
 	                                     |  |                  * *          +-- InprocServer()

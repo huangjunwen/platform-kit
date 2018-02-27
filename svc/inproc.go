@@ -100,6 +100,9 @@ func (svc *inprocClientService) Invoke(ctx context.Context, method Method, input
 
 // NewInprocFirstClient 创建一个客户端，该客户端会首先寻找本进程内的服务，若找不到时会使用 alt
 func NewInprocFirstClient(alt ServiceClient) ServiceClient {
+	if alt == defaultInprocClient {
+		panic(ErrAltIsInprocClient)
+	}
 	return &inprocFirstClient{
 		alt: alt,
 	}

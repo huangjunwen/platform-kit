@@ -1,5 +1,7 @@
 /*
-Package libsvc 提供一个服务框架，主要类型跟函数之间的关系图如下：
+Package libsvc 提供一个服务框架.
+
+主要类型跟函数之间的关系图如下：
 
 	                                                                        +-- InprocClient()
 	                      Make()                                            |

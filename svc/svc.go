@@ -140,8 +140,8 @@ func (svc *localService) Invoke(ctx context.Context, method Method, input, outpu
 	method.AssertInputType(input)
 	method.AssertOutputType(output)
 
-	// 建立一个“崭新”的 context 来执行 handler
-	return handler.Invoke(newProxyContext(ctx), input, output)
+	// 执行 handler
+	return handler.Invoke(ctx, input, output)
 
 }
 

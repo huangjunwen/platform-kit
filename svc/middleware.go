@@ -99,8 +99,7 @@ func (svc *decSvcWithItf) Interface() Interface {
 
 // Make 实现 ServiceClient 接口
 func (client *decClient) Make(svcName string) Service {
-	svc := client.client.Make(svcName)
-	return DecorateService(svc, client.mws...)
+	return DecorateService(client.client.Make(svcName), client.mws...)
 }
 
 // Register 实现 ServiceServer 接口

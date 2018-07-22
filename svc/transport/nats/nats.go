@@ -1,14 +1,15 @@
 package natstransport
 
 import (
-	libsvc "bitbucket.org/jayven/platform-kit/svc"
 	"bytes"
 	"context"
 	"errors"
-	"github.com/nats-io/go-nats"
 	"io"
 	"math/rand"
 	"sync"
+
+	libsvc "github.com/huangjunwen/platform-kit/svc"
+	"github.com/nats-io/go-nats"
 )
 
 type natsServer struct {

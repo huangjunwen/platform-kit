@@ -10,7 +10,7 @@ import (
 
 var (
 	// 默认批量消息大小
-	DefaultOptBatch = 100
+	DefaultOptBatch = 500
 	// 默认拉数据间隔
 	DefaultOptFetchInterval = 30 * time.Second
 )
@@ -29,9 +29,10 @@ type MsgSource interface {
 	// Fetch 从 MsgSource 提取有要发布的消息
 	Fetch() <-chan MsgEntry
 
-	// Consumed 在发布后调用，results[i] 表示 msgs[i] 的发布结果:
+	// ProcessResult 在发布后调用，results[i] 表示 msgs[i] 的发布结果:
 	// true 为发布成功，false 为发布失败，需要重试
-	Consumed(msgs []MsgEntry, reults []bool)
+	// NOTE: msgs 长度不会超过 MsgConnector 的批量数目
+	ProcessResult(msgs []MsgEntry, results []bool)
 }
 
 // MsgConnector 用于将 MsgSource 中的消息发布到 nats-streaming-server 上.
@@ -50,7 +51,7 @@ type MsgConnector struct {
 // MsgConnectorOption 是用于创建 MsgConnector 的配置
 type MsgConnectorOption func(*MsgConnector) error
 
-// OptBatch 设置一次批量发送消息的数量，默认 100
+// OptBatch 设置一次批量发送消息的数量，默认 500
 func OptBatch(batch int) MsgConnectorOption {
 	return func(c *MsgConnector) error {
 		if batch <= 0 {
@@ -92,10 +93,6 @@ func NewMsgConnector(sc stan.Conn, src MsgSource, opts ...MsgConnectorOption) (*
 
 func (c *MsgConnector) loop() {
 
-	// 预先分配 buffer
-	msgs := make([]MsgEntry, 0, c.batch)
-	results := make([]bool, 0, c.batch)
-
 	stopped := false
 	for !stopped {
 
@@ -103,8 +100,8 @@ func (c *MsgConnector) loop() {
 		msgch := c.src.Fetch()
 		for {
 			// 一次从 msgch 中抓取不超过 batch 的消息
-			msgs = msgs[0:0]
-			results = results[0:0]
+			msgs := []MsgEntry{}
+			results := []bool{}
 			for msg := range msgch {
 				msgs = append(msgs, msg)
 				results = append(results, false)
@@ -165,7 +162,7 @@ func (c *MsgConnector) loop() {
 			}
 
 			// 通知 MsgSource
-			c.src.Consumed(msgs, results)
+			c.src.ProcessResult(msgs, results)
 
 		}
 

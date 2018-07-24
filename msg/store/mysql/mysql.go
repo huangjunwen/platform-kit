@@ -7,6 +7,12 @@ import (
 	"strconv"
 
 	libmsg "github.com/huangjunwen/platform-kit/msg"
+	"github.com/rs/zerolog"
+)
+
+const (
+	// !!!永远不要改变这个，因为它是数据表的前缀
+	magicTableNamePrefix = "_6D7367_" // hexlify("msg")
 )
 
 // MySQLMsgStore 实现 libmsg.MsgStore 接口; 它会在指定 db 中建立一个表 (CREATE IF NOT EXISTS)，
@@ -17,7 +23,13 @@ type MySQLMsgStore struct {
 	tableName   string
 	selectQuery string
 	insertQuery string
+
+	// options
+	logger zerolog.Logger
 }
+
+// Option 是创建 MySQLMsgStore 时的选项
+type Option func(*MySQLMsgStore) error
 
 type nxMySQLMsg struct {
 	id      int
@@ -37,8 +49,31 @@ var (
 	_ libmsg.MsgStore = (*MySQLMsgStore)(nil)
 )
 
-// NewMySQLMsgStore 新建一个 MySQLMsgStore
-func NewMySQLMsgStore(db *sql.DB, tableName string) (*MySQLMsgStore, error) {
+// OptLogger 添加一个 logger
+func OptLogger(logger *zerolog.Logger) Option {
+	return func(s *MySQLMsgStore) error {
+		s.logger = logger.With().Str("comp", "mysql_msg_store").Logger()
+		return nil
+	}
+}
+
+// NewMySQLMsgStore 新建一个 MySQLMsgStore，注意，这个 tableName 必须不要跟已有表重名
+func NewMySQLMsgStore(db *sql.DB, tableName string, opts ...Option) (*MySQLMsgStore, error) {
+
+	tableName = magicTableNamePrefix + tableName
+	ret := &MySQLMsgStore{
+		db:          db,
+		tableName:   tableName,
+		selectQuery: fmt.Sprintf("SELECT id, subject, data FROM %s ORDER BY id", tableName),
+		insertQuery: fmt.Sprintf("INSERT INTO %s (subject, data) VALUES (?, ?)", tableName),
+		logger:      zerolog.Nop(),
+	}
+
+	for _, opt := range opts {
+		if err := opt(ret); err != nil {
+			return nil, err
+		}
+	}
 
 	// 创建一个表用于存放要消息
 	_, err := db.Exec(fmt.Sprintf(`
@@ -50,15 +85,11 @@ func NewMySQLMsgStore(db *sql.DB, tableName string) (*MySQLMsgStore, error) {
 		)
 	`, tableName))
 	if err != nil {
+		ret.logger.Error().Err(err).Msgf("Failed to create msg table %+q", tableName)
 		return nil, err
 	}
 
-	return &MySQLMsgStore{
-		db:          db,
-		tableName:   tableName,
-		selectQuery: fmt.Sprintf("SELECT id, subject, data FROM %s ORDER BY id", tableName),
-		insertQuery: fmt.Sprintf("INSERT INTO %s (subject, data) VALUES (?, ?)", tableName),
-	}, nil
+	return ret, nil
 
 }
 
@@ -66,7 +97,7 @@ func NewMySQLMsgStore(db *sql.DB, tableName string) (*MySQLMsgStore, error) {
 func (s *MySQLMsgStore) Fetch() <-chan libmsg.MsgEntry {
 	rows, err := s.db.Query(s.selectQuery)
 	if err != nil {
-		// TODO: log
+		s.logger.Error().Err(err).Msgf("Failed to select rows from msg table %+q", s.tableName)
 		return closedch
 	}
 
@@ -77,7 +108,7 @@ func (s *MySQLMsgStore) Fetch() <-chan libmsg.MsgEntry {
 		for rows.Next() {
 			m := &nxMySQLMsg{}
 			if err := rows.Scan(&m.id, &m.subject, &m.data); err != nil {
-				// TODO: log
+				s.logger.Error().Err(err).Msgf("Failed to scan rows from msg table %+q", s.tableName)
 				break
 			}
 			ch <- m
@@ -108,8 +139,10 @@ func (s *MySQLMsgStore) ProcessResult(msgs []libmsg.MsgEntry, results []bool) {
 
 	// 删除成功发布的消息
 	query := fmt.Sprintf("DELETE FROM %s WHERE id IN (%s)", s.tableName, ids)
-	// TODO: err log
-	s.db.Exec(query)
+	_, err := s.db.Exec(query)
+	if err != nil {
+		s.logger.Error().Err(err).Msgf("Failed to delete rows from msg table %+q", s.tableName)
+	}
 
 }
 

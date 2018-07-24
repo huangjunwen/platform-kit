@@ -6,6 +6,7 @@ import (
 	"time"
 
 	stan "github.com/nats-io/go-nats-streaming"
+	"github.com/rs/zerolog"
 )
 
 var (
@@ -46,13 +47,14 @@ type MsgConnector struct {
 	// options
 	batch         int
 	fetchInterval time.Duration
+	logger        zerolog.Logger
 }
 
-// MsgConnectorOption 是用于创建 MsgConnector 的配置
-type MsgConnectorOption func(*MsgConnector) error
+// Option 是用于创建 MsgConnector 的配置
+type Option func(*MsgConnector) error
 
 // OptBatch 设置一次批量发送消息的数量，默认 500
-func OptBatch(batch int) MsgConnectorOption {
+func OptBatch(batch int) Option {
 	return func(c *MsgConnector) error {
 		if batch <= 0 {
 			return fmt.Errorf("batch <= 0")
@@ -63,15 +65,23 @@ func OptBatch(batch int) MsgConnectorOption {
 }
 
 // OptFetchInterval 设置主动从 MsgSource 中拉数据的时间间隔，默认 30 秒
-func OptFetchInterval(fetchInterval time.Duration) MsgConnectorOption {
+func OptFetchInterval(fetchInterval time.Duration) Option {
 	return func(c *MsgConnector) error {
 		c.fetchInterval = fetchInterval
 		return nil
 	}
 }
 
+// OptLogger 添加一个 logger
+func OptLogger(logger *zerolog.Logger) Option {
+	return func(c *MsgConnector) error {
+		c.logger = logger.With().Str("comp", "msg_connector").Logger()
+		return nil
+	}
+}
+
 // NewMsgConnector 创建一个 MsgConnector
-func NewMsgConnector(sc stan.Conn, src MsgStore, opts ...MsgConnectorOption) (*MsgConnector, error) {
+func NewMsgConnector(sc stan.Conn, src MsgStore, opts ...Option) (*MsgConnector, error) {
 	ret := &MsgConnector{
 		sc:            sc,
 		store:         src,
@@ -79,6 +89,7 @@ func NewMsgConnector(sc stan.Conn, src MsgStore, opts ...MsgConnectorOption) (*M
 		stopch:        make(chan struct{}),
 		batch:         DefaultOptBatch,
 		fetchInterval: DefaultOptFetchInterval,
+		logger:        zerolog.Nop(),
 	}
 
 	for _, opt := range opts {
@@ -98,6 +109,9 @@ func (c *MsgConnector) loop() {
 
 		// 抓取要发送的消息
 		msgch := c.store.Fetch()
+		nMsgs := 0
+		nSuccess := 0
+		startTime := time.Now()
 		for {
 			// 一次从 msgch 中抓取不超过 batch 的消息
 			msgs := []MsgEntry{}
@@ -164,18 +178,22 @@ func (c *MsgConnector) loop() {
 			// 通知 MsgSource
 			c.store.ProcessResult(msgs, results)
 
+			// 一些统计
+			nMsgs += len(msgs)
+			nSuccess += len(success)
+
 		}
+		dur := time.Since(startTime)
+		c.logger.Info().Int("nmsgs", nMsgs).Int("nsuccess", nSuccess).Str("dur", dur.String()).Msg("")
 
 		// 间隔一段时间也主动 fetch 一次
 		t := time.NewTimer(c.fetchInterval)
-
 		select {
 		case <-c.stopch:
 			stopped = true
 		case <-t.C:
 		case <-c.kickch:
 		}
-
 		t.Stop()
 
 	}

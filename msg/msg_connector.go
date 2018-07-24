@@ -24,8 +24,8 @@ type MsgEntry interface {
 	Data() []byte
 }
 
-// MsgSource 代表消息来源
-type MsgSource interface {
+// MsgStore 代表消息仓库
+type MsgStore interface {
 	// Fetch 从 MsgSource 提取有要发布的消息
 	Fetch() <-chan MsgEntry
 
@@ -35,11 +35,11 @@ type MsgSource interface {
 	ProcessResult(msgs []MsgEntry, results []bool)
 }
 
-// MsgConnector 用于将 MsgSource 中的消息发布到 nats-streaming-server 上.
-// At-least-once：即 MsgSource 中的消息最少会被发送一次，但有可能会重复发；因此接收方必须保证幂等性
+// MsgConnector 用于将 MsgStore 中的消息发布到 nats-streaming-server 上.
+// At-least-once：即 MsgStore 中的消息最少会被发送一次，但有可能会重复发；因此接收方必须保证幂等性
 type MsgConnector struct {
 	sc     stan.Conn
-	src    MsgSource
+	store  MsgStore
 	kickch chan struct{}
 	stopch chan struct{}
 
@@ -71,10 +71,10 @@ func OptFetchInterval(fetchInterval time.Duration) MsgConnectorOption {
 }
 
 // NewMsgConnector 创建一个 MsgConnector
-func NewMsgConnector(sc stan.Conn, src MsgSource, opts ...MsgConnectorOption) (*MsgConnector, error) {
+func NewMsgConnector(sc stan.Conn, src MsgStore, opts ...MsgConnectorOption) (*MsgConnector, error) {
 	ret := &MsgConnector{
 		sc:            sc,
-		src:           src,
+		store:         src,
 		kickch:        make(chan struct{}, 1),
 		stopch:        make(chan struct{}),
 		batch:         DefaultOptBatch,
@@ -97,7 +97,7 @@ func (c *MsgConnector) loop() {
 	for !stopped {
 
 		// 抓取要发送的消息
-		msgch := c.src.Fetch()
+		msgch := c.store.Fetch()
 		for {
 			// 一次从 msgch 中抓取不超过 batch 的消息
 			msgs := []MsgEntry{}
@@ -162,7 +162,7 @@ func (c *MsgConnector) loop() {
 			}
 
 			// 通知 MsgSource
-			c.src.ProcessResult(msgs, results)
+			c.store.ProcessResult(msgs, results)
 
 		}
 
@@ -182,7 +182,7 @@ func (c *MsgConnector) loop() {
 
 }
 
-// Kick 踢一下 connector，让它开始发布消息
+// Kick 让 connector 立即从 MsgStore 中拉取消息发布
 func (c *MsgConnector) Kick() {
 	// 非阻塞地往 kickch 发送消息
 	select {

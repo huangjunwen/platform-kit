@@ -184,7 +184,9 @@ func (c *MsgConnector) loop() {
 
 		}
 		dur := time.Since(startTime)
-		c.logger.Info().Int("nmsgs", nMsgs).Int("nsuccess", nSuccess).Str("dur", dur.String()).Msg("")
+		if nMsgs != 0 {
+			c.logger.Info().Int("nmsgs", nMsgs).Int("nsuccess", nSuccess).Str("dur", dur.String()).Msg("")
+		}
 
 		// 间隔一段时间也主动 fetch 一次
 		t := time.NewTimer(c.fetchInterval)

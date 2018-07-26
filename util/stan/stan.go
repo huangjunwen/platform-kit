@@ -16,8 +16,8 @@ var (
 	ErrEmptyGroupName = errors.New("stanutil: empty group name")
 )
 
-// Conn 是对 stan.Conn 的封装；当跟 streaming server 连接断开后能自动重连，并重新订阅；
-// 仅支持持久化订阅，且不能取消订阅
+// Conn 是对 stan.Conn 的封装；提供自动重连/重新订阅功能; 支持 Publish/PublishAsync 以及
+// 持久化的 QueueSubscribe，不支持 Unsubscribe
 type Conn struct {
 	id        string
 	options   Options
@@ -27,7 +27,7 @@ type Conn struct {
 	sc      stan.Conn                   // sc 为空时表示连接未准备好
 	stalech chan struct{}               // stalech 用于通知其它 routine sc 已过期失效
 	subs    map[[2]string]*subscription // (subject, group)->subscription
-
+	closed  bool                        // 是否已关闭
 }
 
 // subscription 是单个订阅
@@ -58,30 +58,41 @@ func NewConn(nc *nats.Conn, clusterID string, opts ...Option) *Conn {
 		connect func(bool)
 	)
 
+	// 该函数关闭旧连接（如果有的话），释放资源，并创建新连接，
+	// 重新订阅
 	connect = func(wait bool) {
+		// 稍微停顿一下
+		if wait {
+			time.Sleep(c.options.reconnectWait)
+		}
+
 		// 保证同一时间只有一个 connect 在运行
 		c.connectMu.Lock()
 		defer c.connectMu.Unlock()
 
-		// 重置字段
-		c.mu.Lock()
-		oldSc := c.sc
-		oldStalech := c.stalech
-		c.sc = nil
-		c.stalech = nil
-		c.mu.Unlock()
+		// 置空字段，保证旧资源关闭并释放
+		{
+			c.mu.Lock()
+			sc := c.sc
+			stalech := c.stalech
+			closed := c.closed
+			c.sc = nil
+			c.stalech = nil
+			c.mu.Unlock()
 
-		// 保证旧资源已关闭并释放
-		if oldSc != nil {
-			oldSc.Close()
-		}
-		if oldStalech != nil {
-			close(oldStalech)
-		}
+			// 关闭连接并释放资源
+			if sc != nil {
+				sc.Close()
+			}
+			if stalech != nil {
+				close(stalech)
+			}
 
-		// 稍微停顿一下
-		if wait {
-			time.Sleep(c.options.reconnectWait)
+			// 已经关闭了
+			if closed {
+				return
+			}
+
 		}
 
 		// 开始连接
@@ -115,6 +126,33 @@ func NewConn(nc *nats.Conn, clusterID string, opts ...Option) *Conn {
 
 	go connect(false)
 	return c
+}
+
+// Close 关闭连接，释放资源
+func (c *Conn) Close() {
+	// 保证没有 connect 在运行
+	c.connectMu.Lock()
+	defer c.connectMu.Unlock()
+
+	// 置空字段，保证旧资源关闭并释放，设 closed 为真
+	c.mu.Lock()
+	sc := c.sc
+	stalech := c.stalech
+	c.sc = nil
+	c.stalech = nil
+	c.closed = true
+	c.mu.Unlock()
+
+	// 关闭连接并释放资源
+	if sc != nil {
+		// NOTE: The callback (SetConnectionLostHandler) will not be invoked on normal Conn.Close().
+		sc.Close()
+	}
+	if stalech != nil {
+		close(stalech)
+	}
+
+	return
 }
 
 // Publish 同步发布消息，等同于 stan.Conn.Publish

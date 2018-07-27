@@ -215,11 +215,16 @@ func (c *Conn) QueueSubscribe(subject, group string, cb stan.MsgHandler, opts ..
 }
 
 func (sub *subscription) queueSubscribeTo(sc stan.Conn, stalech chan struct{}) {
+	// 给选项加上 DurableName
+	opts := []stan.SubscriptionOption{}
+	opts = append(opts, sub.options.stanOptions...)
+	opts = append(opts, stan.DurableName(sub.group))
+
 	// 如果订阅失败会一直重试，除非 sc 失效过期了
 	stale := false
 	for !stale {
 		// 不支持 Unsubscribe，这样实现起来就比较简单了，不需要记录下来 stan.Subscription
-		_, err := sc.QueueSubscribe(sub.subject, sub.group, sub.cb, sub.options.stanOptions...)
+		_, err := sc.QueueSubscribe(sub.subject, sub.group, sub.cb, opts...)
 		if err == nil {
 			return
 		}

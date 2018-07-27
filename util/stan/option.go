@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/nats-io/go-nats-streaming"
+	"github.com/rs/zerolog"
 )
 
 var (
@@ -19,6 +20,8 @@ type Options struct {
 
 	// reconnectWait 重连间隔时间
 	reconnectWait time.Duration
+	// 日志
+	logger zerolog.Logger
 }
 
 // SubscriptionOptions 是订阅选项
@@ -40,6 +43,7 @@ func NewOptions() Options {
 	return Options{
 		stanOptions:   []stan.Option{},
 		reconnectWait: DefaultReconnectWait,
+		logger:        zerolog.Nop(),
 	}
 }
 
@@ -68,6 +72,17 @@ func OptPings(interval, maxOut int) Option {
 func OptReconnectWait(t time.Duration) Option {
 	return func(o *Options) {
 		o.reconnectWait = t
+	}
+}
+
+// OptLogger 设置日志
+func OptLogger(l *zerolog.Logger) Option {
+	return func(o *Options) {
+		if l == nil {
+			o.logger = zerolog.Nop()
+		} else {
+			o.logger = *l
+		}
 	}
 }
 

@@ -32,6 +32,8 @@ type Conn struct {
 
 // subscription 是单个订阅
 type subscription struct {
+	conn *Conn
+
 	// 基本属性
 	subject string
 	group   string
@@ -54,8 +56,12 @@ func NewConn(nc *nats.Conn, clusterID string, opts ...Option) *Conn {
 		opt(&c.options)
 	}
 
+	// 给日志添加上 id
+	c.options.logger = c.options.logger.With().Str("client_id", c.id).Logger()
+
 	var (
 		connect func(bool)
+		logger  = c.options.logger.With().Str("comp", "stanutil.Conn.connect").Logger()
 	)
 
 	// 该函数关闭旧连接（如果有的话），释放资源，并创建新连接，
@@ -90,6 +96,7 @@ func NewConn(nc *nats.Conn, clusterID string, opts ...Option) *Conn {
 
 			// 已经关闭了
 			if closed {
+				logger.Info().Msg("Conn closed. connect aborted.")
 				return
 			}
 
@@ -102,12 +109,15 @@ func NewConn(nc *nats.Conn, clusterID string, opts ...Option) *Conn {
 		opts = append(opts, stan.SetConnectionLostHandler(func(_ stan.Conn, _ error) {
 			go connect(true)
 		}))
+
 		sc, err := stan.Connect(clusterID, c.id, opts...)
 		if err != nil {
 			// 失败了，继续重试
+			logger.Error().Err(err).Msg("Failed to connect.")
 			go connect(true)
 			return
 		}
+		logger.Info().Msg("Connected.")
 
 		// 成功了，需要更新字段，并重新订阅
 		c.mu.Lock()
@@ -185,6 +195,7 @@ func (c *Conn) QueueSubscribe(subject, group string, cb stan.MsgHandler, opts ..
 	}
 
 	sub := &subscription{
+		conn:    c,
 		subject: subject,
 		group:   group,
 		cb:      cb,
@@ -215,6 +226,11 @@ func (c *Conn) QueueSubscribe(subject, group string, cb stan.MsgHandler, opts ..
 }
 
 func (sub *subscription) queueSubscribeTo(sc stan.Conn, stalech chan struct{}) {
+	logger := sub.conn.options.logger.With().
+		Str("comp", "stanutil.Conn.queueSubscribeTo").
+		Str("subj", sub.subject).
+		Str("grp", sub.group).Logger()
+
 	// 给选项加上 DurableName
 	opts := []stan.SubscriptionOption{}
 	opts = append(opts, sub.options.stanOptions...)
@@ -226,8 +242,10 @@ func (sub *subscription) queueSubscribeTo(sc stan.Conn, stalech chan struct{}) {
 		// 不支持 Unsubscribe，这样实现起来就比较简单了，不需要记录下来 stan.Subscription
 		_, err := sc.QueueSubscribe(sub.subject, sub.group, sub.cb, opts...)
 		if err == nil {
+			logger.Info().Msg("Subscribed.")
 			return
 		}
+		logger.Error().Err(err).Msg("Subscribe error.")
 
 		// 等待一段时间
 		t := time.NewTimer(sub.options.resubscribeWait)
